@@ -130,6 +130,7 @@ public:
 	}
 
 #if 0
+	//同一値があったときにはじく奴
 	int Insert(Object* pObject)
 	{
 		RB_NODE** pNode = &pRoot;
@@ -157,7 +158,7 @@ public:
 
 		*pNode = pObject;
 
-		InternalInsert(this, (RB_NODE*)pObject, pParent);
+		RBTreeInsert(this, (RB_NODE*)pObject, pParent);
 		return SUCCESS;
 	}
 #endif
@@ -211,7 +212,7 @@ struct Object : public RBTreeNode<Object>
 	}
 };
 
-constexpr int nMaxNodes = 16 * 1024;
+constexpr int nMaxNodes = 32 * 1024;
 static RBTree<Object> tree;
 static Object nodes[nMaxNodes];
 static Object* pFreeNodeList;
@@ -247,9 +248,12 @@ void InitNodes()
 	*(Object**)&nodes[nMaxNodes-1] = NULL;
 }
 
-#ifdef _DEBUG
+#if defined(_DEBUG) || 1
 #define VALIDATE
 #endif
+
+#define PROFILE
+
 
 int main()
 {
@@ -265,7 +269,11 @@ int main()
 
 	int64_t bestTime = INT64_MAX;
 
+#ifdef PROFILE
+	for (int loop2 = 0; loop2 < 256; ++loop2)
+#else
 	for (int loop2 = 0; loop2 < 64; ++loop2)
+#endif
 	{
 		auto start = std::chrono::system_clock::now();
 		size_t nNodes = 0;
@@ -280,7 +288,7 @@ int main()
 
 			Object* node = NULL;
 
-			if (per < 60 && (node = AllocNode()) != NULL)
+			if (per < 55 && (node = AllocNode()) != NULL)
 			{
 				int v = distribution(engine);
 				node->value = v;

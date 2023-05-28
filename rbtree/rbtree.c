@@ -1,14 +1,16 @@
 #include "rbtree.h"
+#include <stdio.h>
+#include <assert.h>
 
 
-#define SET_BLACK_AND_PARENT( pNode, pParent )		(pNode)->parentAndColor = (uintptr_t)(pParent) + BLACK
-#define SET_RED_AND_PARENT( pNode, pParent )		(pNode)->parentAndColor = (uintptr_t)(pParent)
+#define SET_BLACK_AND_PARENT( pNode, pParent )		do{ (pNode)->parentAndColor = (uintptr_t)(pParent) + BLACK; }while(0)
+#define SET_RED_AND_PARENT( pNode, pParent )		do{ (pNode)->parentAndColor = (uintptr_t)(pParent); }while(0)
 #define GET_PARENT(pNode)							((RB_NODE*)((pNode)->parentAndColor & ~COLOR_MASK))
-#define SET_PARENT( pNode, pParent )				(pNode)->parentAndColor = (((pNode)->parentAndColor&COLOR_MASK) + (uintptr_t)(pParent))
+#define SET_PARENT( pNode, pParent )				do{ (pNode)->parentAndColor = (((pNode)->parentAndColor&COLOR_MASK) + (uintptr_t)(pParent)); }while(0)
 #define IS_BLACK(pNode)								((pNode)->parentAndColor&COLOR_MASK)
 #define IS_RED(pNode)								(!IS_BLACK(pNode))
 #define GET_OPPOSITE_NODE_TYPE( type )				((RB_NODE_TYPE)(RightNodeOffset - (type)))
-#define GET_CHILD_NODE( pNode, type )				((RB_NODE**)((char*)(pNode) + (type)))
+#define GET_CHILD_NODE( pNode, type )				((RB_NODE**)((uint8_t*)(pNode) + (type)))
 #define GET_COLOR(pNode)							((pNode)->parentAndColor & COLOR_MASK)
 
 #define	RED				(0)
@@ -19,8 +21,6 @@ typedef enum RB_NODE_TYPE_EN
 {
 	LeftNodeOffset = 0,
 	RightNodeOffset = sizeof(RB_NODE*),
-	NextNode = RightNodeOffset,
-	PrevNode = LeftNodeOffset,
 } RB_NODE_TYPE;
 
 void RBTreeInsert(RB_TREE* pTree, RB_NODE* pNode, RB_NODE* pParent)
@@ -41,33 +41,31 @@ void RBTreeInsert(RB_TREE* pTree, RB_NODE* pNode, RB_NODE* pParent)
 			}
 
 			RB_NODE_TYPE t = LeftNodeOffset;
+			RB_NODE* pUncle = *GET_CHILD_NODE(pGParent, LeftNodeOffset);
 
 			if (pParent == pGParent->pLeft)
 			{
 				t = RightNodeOffset;
+				pUncle = *GET_CHILD_NODE(pGParent, RightNodeOffset);
 			}
 
+			if (pUncle && IS_RED(pUncle))
 			{
-				RB_NODE* pUncle = *GET_CHILD_NODE(pGParent, t);
+				uintptr_t ggparent = pGParent->parentAndColor;
+				SET_BLACK_AND_PARENT(pUncle, pGParent);
+				SET_BLACK_AND_PARENT(pParent, pGParent);
 
-				if (pUncle && IS_RED(pUncle))
+				if (ggparent == BLACK)		//pGGParent == NULL
 				{
-					uintptr_t ggparent = pGParent->parentAndColor;
-					SET_BLACK_AND_PARENT(pUncle, pGParent);
-					SET_BLACK_AND_PARENT(pParent, pGParent);
-
-					if (ggparent == BLACK)		//pGGParent == NULL
-					{
-						pGParent->parentAndColor = BLACK;
-						break;
-					}
-
-					RB_NODE* pGGParentRed = (RB_NODE*)(ggparent - BLACK);
-					pGParent->pParent = pGGParentRed;
-					pParent = pGGParentRed;
-					pNode = pGParent;
-					continue;
+					pGParent->parentAndColor = BLACK;
+					break;
 				}
+
+				RB_NODE* pGGParentRed = (RB_NODE*)(ggparent - BLACK);
+				pGParent->pParent = pGGParentRed;
+				pParent = pGGParentRed;
+				pNode = pGParent;
+				continue;
 			}
 
 			RB_NODE_TYPE s = GET_OPPOSITE_NODE_TYPE(t);
@@ -129,11 +127,11 @@ void RBTreeErase(RB_TREE* pTree, RB_NODE* pNode)
 	{
 		RB_NODE* pChild;
 
-		if (NULL == pNode->pLeft)
+		if (pNode->pLeft == NULL)
 		{
 			pChild = pNode->pRight;
 		}
-		else if (NULL == pNode->pRight)
+		else if (pNode->pRight == NULL)
 		{
 			pChild = pNode->pLeft;
 		}
@@ -176,7 +174,7 @@ void RBTreeErase(RB_TREE* pTree, RB_NODE* pNode)
 			{
 				if (pChild)
 				{
-					SET_PARENT(pChild, pParent);
+					SET_RED_AND_PARENT(pChild, pParent);
 				}
 
 				pParent->pLeft = pChild;
@@ -196,7 +194,7 @@ void RBTreeErase(RB_TREE* pTree, RB_NODE* pNode)
 
 		if (pChild)
 		{
-			SET_PARENT(pChild, pParent);
+			SET_RED_AND_PARENT(pChild, pParent);
 		}
 
 		if (pParent)
@@ -222,18 +220,19 @@ ___blance:
 
 	if (color != RED)
 	{
-		while ((NULL == pNode || IS_BLACK(pNode)) && pParent)
+		while ((pNode == NULL || IS_BLACK(pNode)) && pParent)
 		{
 			RB_NODE_TYPE s = LeftNodeOffset, t = RightNodeOffset;
+			RB_NODE* pOther = *GET_CHILD_NODE(pParent, RightNodeOffset);
 
 			if (pParent->pLeft != pNode)
 			{
+				pOther = *GET_CHILD_NODE(pParent, LeftNodeOffset);
 				RB_NODE_TYPE tmp = s;
 				s = t;
 				t = tmp;
 			}
-
-			RB_NODE* pOther = *GET_CHILD_NODE(pParent, t);
+			
 			RB_NODE* pGParent = GET_PARENT(pParent);
 
 			if (IS_RED(pOther))
@@ -263,31 +262,33 @@ ___blance:
 				}
 
 				pGParent = pChild;
+				RB_NODE* pChild2 = *GET_CHILD_NODE(pOther, t);
 
-				if (NULL == *GET_CHILD_NODE(pOther, t) || IS_BLACK(*GET_CHILD_NODE(pOther, t)))
+				if (pChild2 == NULL || IS_BLACK(pChild2))
 				{
-					if (NULL == *GET_CHILD_NODE(pOther, s) || IS_BLACK(*GET_CHILD_NODE(pOther, s)))
+					pChild2 = *GET_CHILD_NODE(pOther, s);
+
+					if (pChild2 == NULL || IS_BLACK(pChild2))
 					{
 						SET_BLACK_AND_PARENT(pParent, pGParent);
 						SET_RED_AND_PARENT(pOther, pParent);
 						return;
 					}
 
-					RB_NODE* pChild = *GET_CHILD_NODE(pOther, s);
-					RB_NODE* pTmp = *GET_CHILD_NODE(pChild, t);
+					RB_NODE* pTmp = *GET_CHILD_NODE(pChild2, t);
 
 					if ((*GET_CHILD_NODE(pOther, s) = pTmp))
 					{
 						SET_BLACK_AND_PARENT(pTmp, pOther);
 					}
 
-					*GET_CHILD_NODE(pChild, t) = pOther;
-					SET_BLACK_AND_PARENT(pOther, pChild);
-					pOther = pChild;
+					*GET_CHILD_NODE(pChild2, t) = pOther;
+					SET_BLACK_AND_PARENT(pOther, pChild2);
+					pOther = pChild2;
 				}
 				else
 				{
-					SET_BLACK_AND_PARENT(*GET_CHILD_NODE(pOther, t), pOther);
+					SET_BLACK_AND_PARENT(pChild2, pOther);
 				}
 
 				{
@@ -309,9 +310,13 @@ ___blance:
 			}
 			else
 			{
-				if (NULL == *GET_CHILD_NODE(pOther, t) || IS_BLACK(*GET_CHILD_NODE(pOther, t)))
+				RB_NODE* pChild = *GET_CHILD_NODE(pOther, t);
+
+				if (pChild == NULL || IS_BLACK(pChild))
 				{
-					if (NULL == *GET_CHILD_NODE(pOther, s) || IS_BLACK(*GET_CHILD_NODE(pOther, s)))
+					RB_NODE* pChild2 = *GET_CHILD_NODE(pOther, s);
+
+					if (pChild2 == NULL || IS_BLACK(pChild2))
 					{
 						SET_RED_AND_PARENT(pOther, pParent);
 						pNode = pParent;
@@ -319,21 +324,20 @@ ___blance:
 						continue;
 					}
 
-					RB_NODE* pChild = *GET_CHILD_NODE(pOther, s);
-					RB_NODE* pTmp = *GET_CHILD_NODE(pChild, t);
+					RB_NODE* pTmp = *GET_CHILD_NODE(pChild2, t);
 
 					if ((*GET_CHILD_NODE(pOther, s) = pTmp))
 					{
 						SET_BLACK_AND_PARENT(pTmp, pOther);
 					}
 
-					*GET_CHILD_NODE(pChild, t) = pOther;
-					SET_BLACK_AND_PARENT(pOther, pChild);
-					pOther = pChild;
+					*GET_CHILD_NODE(pChild2, t) = pOther;
+					SET_BLACK_AND_PARENT(pOther, pChild2);
+					pOther = pChild2;
 				}
 				else
 				{
-					SET_BLACK_AND_PARENT(*GET_CHILD_NODE(pOther, t), pOther);
+					SET_BLACK_AND_PARENT(pChild, pOther);
 				}
 
 
